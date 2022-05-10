@@ -1,4 +1,5 @@
 import numpy as np
+import jax
 import jax.numpy as jnp
 import flax.linen as nn
 
@@ -253,9 +254,15 @@ class DenseBlock(nn.Module):
         Dense = _non_hp_module(nn.Dense)
         print(x['maps'].shape, "shape at entrance to dense_block")
         
-        y = Dense(x, self.mlp_dim)
+        y = Dense(x, self.mlp_dim, 
+                  dtype=jnp.float32,
+                  kernel_init=nn.initializers.xavier_uniform(),
+                  bias_init=nn.initializers.normal(stddev=1e-6))
         y = gelu(y)
-        y = Dense(y, x['maps'].shape[-1])
+        y = Dense(y, x['maps'].shape[-1], 
+                  dtype=jnp.float32,
+                  kernel_init=nn.initializers.xavier_uniform(),
+                  bias_init=nn.initializers.normal(stddev=1e-6))
         print(y['maps'].shape, "shape after denseblock")
         return y
     
@@ -346,7 +353,7 @@ class Transformer(nn.Module):
         
         x = WideBlock(self.conv_features//4, norm=BatchNorm, act=relu, name='init_conv_1')(x)
         for i in range(self.conv_depth):
-            x = ResidualSeparableBlock(self.conv_features, depth_mul=1, norm=BatchNorm, act=relu)(x)
+            x = ResidualConvBlock(self.conv_features, norm=BatchNorm, act=relu)(x)
        
         x = GraphTransform(nside_sup=self.nside_super, 
                            K_p=self.K_p, 
@@ -361,8 +368,8 @@ class Transformer(nn.Module):
         
         if self.include_top:
             x = LayerNorm(x)
-            out = jnp.mean(x['maps'], axis=-2) #global_avg_pool
-            out = nn.Dense(self.num_classes)(out)
+            out = jnp.mean(x['maps'], axis=1) #global_avg_pool
+            out = nn.Dense(self.num_classes, kernel_init=nn.initializers.zeros)(out)
         
         return out
         

@@ -75,7 +75,7 @@ def cross_entropy_loss(logits, labels):
     returns: cross entropy loss
     """
     one_hot_labels = common_utils.onehot(labels, num_classes=NUM_CLASSES)
-    cross_entropy = optax.softmax_cross_entropy(logits=logits, labels=one_hot_labels)
+    cross_entropy = optax.softmax_cross_entropy(logits, one_hot_labels)
     return jnp.mean(cross_entropy)
 
 def compute_metrics(logits, labels):
@@ -364,7 +364,7 @@ def train_and_test(dataset, train_data, test_data, model, config) -> TrainState:
 
     steps_per_checkpoint = steps_per_epoch
 
-    base_learning_rate = config['init_lr'] * config['batch_size'] / 8.
+    base_learning_rate = config['init_lr'] * config['batch_size'] / 256.
     
     model = model
 

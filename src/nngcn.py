@@ -767,7 +767,9 @@ class HealpyPool(nn.Module):
         outputs['nside'] = nside_out
         outputs['indices'] = indices_out
         
-        x = jnp.take(x, reduced_indices, axis=-2) #input format (N)MF
+        idx = _get_indices_idx(indices_in, masked_indices)
+        
+        x = jnp.take(x, idx, axis=-2) #input format (N)MF
         
         if self.pool_type == 'AVG':
             x = nn.avg_pool(x, (4**self.p, ), (4**self.p, ), padding='VALID')
@@ -835,7 +837,9 @@ class HealpyPseudoConv(nn.Module): #seems to work. now we need to find a way con
         outputs['nside'] = nside_out
         outputs['indices'] = indices_out
         
-        x = jnp.take(x, masked_indices, axis=-2) #input format (N)MF
+        idx = _get_indices_idx(indices_in, masked_indices)
+        
+        x = jnp.take(x, idx, axis=-2) #input format (N)MF
         x = self.filter(x)
         outputs['maps']=x
         
@@ -1176,8 +1180,10 @@ class HealpyChebyshevConv_v2(nn.Module): #works.
         
         _L = get_L(nside=nside_in, indices=masked_indices, n_neighbors=self.n_neighbors)
         graphconv = self._get_layer(L=_L)
+       
+        idx = _get_indices_idx(indices_in, masked_indices)
         
-        x = jnp.take(x, masked_indices, axis=-2)
+        x = jnp.take(x, idx, axis=-2)
         x = graphconv(x)
         outputs['maps'] = x
         
@@ -1250,9 +1256,11 @@ class HealpyDepthwiseChebyshevConv_v2(nn.Module): #works.
         outputs['indices']=indices_out        
         
         _L = get_L(nside=nside_in, indices=reduced_indices, n_neighbors=self.n_neighbors)
-        
         graphdepthconv = self._get_layer(L=_L)
-        x = graphdepthconv(x)
+        
+        idx = _get_indices_idx(indices_in, masked_indices)
+        
+        x = jnp.take(x, idx, axis=-2)
         outputs['maps'] = x
         
         return outputs
@@ -1333,9 +1341,11 @@ class HealpySeparableChebyshevConv_v2(nn.Module): #works.
         outputs['indices']=indices_out        
         
         _L = get_L(nside=nside_in, indices=reduced_indices, n_neighbors=self.n_neighbors)
-        
         graphseparableconv = self._get_layer(L=_L)
-        x = graphseparableconv(x)
+        
+        idx = _get_indices_idx(indices_in, masked_indices)
+        
+        x = jnp.take(x, idx, axis=-2)
         outputs['maps'] = x
         
         return outputs    
@@ -1639,7 +1649,7 @@ class MaskedConv(nn.Module):
         mask = jnp.reshape(self.mask, (-1, kernel_size[-1])) #(N, M/N)
         mask = jnp.expand_dims(mask, axis=1) #(N, K, M/N)
         mask = jnp.expand_dims(mask, axis=-1) #(N, K, M/N, fin/group*fout) #this is just to make the mask
-        mask = jnp.expand_dims(mask, axis=-1) #(N, K, M/N, fin/group, fout) #broadcastable to kernel
+        mask = jnp.expand_dims(mask, axis=-1).astype(np.float32) #(N, K, M/N, fin/group, fout) #broadcastable to kernel
                            
         if self.einsum == True: #doesn't fit in memory but scan seems to be slow.
             masked_kernel = kernel*mask
@@ -2475,3 +2485,18 @@ def _get_new_indices(indices, p, reduce=True):
             new_indices = output.at[new_indices].set(new_indices) #scatter new indices in
     return reduced_indices, new_indices  #reduced_indices for masking, new_indices for passing it
                                          #to the next module.
+    
+def _get_indices_idx(indices, reduced_indices):
+    """
+    Helper function to get indices of reduced map indices in a bigger index array
+    ------------
+    :param indices: 1D `ndarray` of map indices
+    :param reduced_indices: 1D `ndarray` of map indices, `len(reduced_indices) <= len(indices)`
+    ------------
+    returns: 1D `ndarray` of indices corresponding to locations where `indices == reduced_indices`
+    """
+    idx = np.searchsorted(indices, reduced_indices)
+    mask = idx < indices.size
+    mask[mask] = indices[idx[mask]] == reduced_indices[mask]
+    idx = idx[mask]
+    return idx
